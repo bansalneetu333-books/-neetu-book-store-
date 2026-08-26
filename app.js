@@ -490,8 +490,9 @@ document.addEventListener("keydown", event => {
 // ========================================
 
 if (
-  SUPABASE_URL === "YOUR_EXISTING_SUPABASE_URL" ||
-  SUPABASE_PUBLISHABLE_KEY === "YOUR_EXISTING_PUBLISHABLE_KEY"
+  SUPABASE_URL === " ||"https://qpoiprdminjmhopfpahw.supabase.co"||"
+  SUPABASE_PUBLISHABLE_KEY === "sb_publishable_iAgKgpm-X8TJ-5nFp-xyDg_kSSBSP4o
+"
 ) {
 
   $("status").innerHTML =
