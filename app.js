@@ -490,7 +490,7 @@ document.addEventListener("keydown", event => {
 // ========================================
 
 if (
-  SUPABASE_URL === " ||"https://qpoiprdminjmhopfpahw.supabase.co"||"
+  SUPABASE_URL === " ||"https://qpoiprdminjmhopfpahw.supabase.co"|| "
   SUPABASE_PUBLISHABLE_KEY === "sb_publishable_iAgKgpm-X8TJ-5nFp-xyDg_kSSBSP4o
 "
 ) {
@@ -503,3 +503,4 @@ if (
 
   loadBooks();
 }
+console.log("NEETU BOOK STORE JS IS RUNNING");
