@@ -6,8 +6,8 @@
 // Keep your existing Supabase URL and publishable key here.
 // DO NOT use a service_role/secret key in this file.
 
-const SUPABASE_URL = "YOUR_EXISTING_SUPABASE_URL";
-const SUPABASE_PUBLISHABLE_KEY = "YOUR_EXISTING_PUBLISHABLE_KEY";
+const SUPABASE_URL = "https://qpoiprdminjmhopfpahw.supabase.co/rest/v1/";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_iAgKgpm-X8TJ-5nFp-xyDg_kSSBSP4o";
 
 const BOOK_TABLE = "books";
 const COVER_BUCKET = "book-covers";
@@ -490,16 +490,16 @@ document.addEventListener("keydown", event => {
 // ========================================
 
 if (
-  SUPABASE_URL === " ||"https://qpoiprdminjmhopfpahw.supabase.co"|| "
+  SUPABASE_URL === " ||"https://qpoiprdminjmhopfpahw.supabase.co"|| ";
   SUPABASE_PUBLISHABLE_KEY === "sb_publishable_iAgKgpm-X8TJ-5nFp-xyDg_kSSBSP4o
 "
-) {
+) ;{
 
   $("status").innerHTML =
     `<strong>Supabase setup required.</strong><br>
      Open app.js and keep your existing Supabase URL and publishable key.`;
 
-} else {
+} else
 
   loadBooks();
 }
