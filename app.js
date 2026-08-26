@@ -1,65 +1,37 @@
-// ========================================
+// ============================================
 // NEETU BOOK STORE
-// Supabase-powered bookstore
-// ========================================
+// Supabase-powered book catalogue
+// ============================================
 
-// Keep your existing Supabase URL and publishable key here.
-// DO NOT use a service_role/secret key in this file.
+const SUPABASE_URL =
+  "https://qpoiprdminjmhopfpahw.supabase.co";
 
-const SUPABASE_URL = "https://qpoiprdminjmhopfpahw.supabase.co/rest/v1/";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_iAgKgpm-X8TJ-5nFp-xyDg_kSSBSP4o";
+const SUPABASE_KEY =
+  "sb_publishable_iAgKgpm-X8TJ-5nFp-xyDg_kSSBSP4o";
 
 const BOOK_TABLE = "books";
 const COVER_BUCKET = "book-covers";
 const PDF_BUCKET = "ebooks";
 
-const { createClient } = window.supabase;
-
-const supabase = createClient(
-  SUPABASE_URL,
-  SUPABASE_PUBLISHABLE_KEY
-);
-
-const $ = id => document.getElementById(id);
-
 let books = [];
 let activeBook = null;
 
+// --------------------------------------------
+// HELPERS
+// --------------------------------------------
 
-// ========================================
-// STORAGE URL
-// ========================================
-
-function publicUrl(bucket, path) {
-  if (!path) return "";
-
-  const { data } = supabase
-    .storage
-    .from(bucket)
-    .getPublicUrl(path);
-
-  return data?.publicUrl || "";
+function $(id) {
+  return document.getElementById(id);
 }
-
-
-// ========================================
-// ESCAPE HTML
-// ========================================
 
 function esc(value = "") {
-  return String(value).replace(/[&<>"']/g, char => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  }[char]));
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
-
-
-// ========================================
-// PRICE
-// ========================================
 
 function formatPrice(value) {
   if (value === null || value === undefined || value === "") {
@@ -69,78 +41,134 @@ function formatPrice(value) {
   const number = Number(value);
 
   if (Number.isNaN(number)) {
-    return esc(value);
+    return String(value);
   }
 
   return number === 0 ? "Free" : `₹${number}`;
 }
 
+function storageUrl(bucket, path) {
+  if (!path) return "";
 
-// ========================================
-// LOAD BOOKS
-// ========================================
+  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${String(
+    path
+  )
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/")}`;
+}
 
-async function loadBooks() {
+// --------------------------------------------
+// SHOW STATUS
+// --------------------------------------------
 
-  $("status").textContent = "Loading books…";
+function showStatus(message, error = false) {
+  const status = $("status");
 
-  try {
+  if (!status) return;
 
-    const { data, error } = await supabase
-      .from(BOOK_TABLE)
-      .select(`
-        id,
-        title,
-        slug,
-        author,
-        description,
-        category,
-        age_group,
-        emoji,
-        price_inr,
-        storage_path,
-        cover_path,
-        published,
-        featured,
-        created_at
-      `)
-      .eq("published", true)
-      .order("featured", { ascending: false })
-      .order("created_at", { ascending: false });
+  status.textContent = message;
 
-    if (error) {
-      console.error("Supabase error:", error);
+  status.style.display = "block";
 
-      $("status").innerHTML =
-        `<strong>Unable to load books.</strong><br>
-         ${esc(error.message)}`;
-
-      return;
-    }
-
-    books = data || [];
-
-    buildCategories();
-
-    renderBooks();
-
-  } catch (error) {
-
-    console.error(error);
-
-    $("status").innerHTML =
-      `<strong>Something went wrong.</strong><br>
-       ${esc(error.message || error)}`;
+  if (error) {
+    status.style.color = "#b42318";
+  } else {
+    status.style.color = "#68736c";
   }
 }
 
+// --------------------------------------------
+// LOAD BOOKS DIRECTLY FROM SUPABASE
+// --------------------------------------------
 
-// ========================================
+async function loadBooks() {
+  showStatus("Loading books…");
+
+  const columns = [
+    "id",
+    "title",
+    "slug",
+    "author",
+    "description",
+    "category",
+    "age_group",
+    "emoji",
+    "price_inr",
+    "storage_path",
+    "cover_path",
+    "published",
+    "featured",
+    "created_at"
+  ].join(",");
+
+  const url =
+    `${SUPABASE_URL}/rest/v1/${BOOK_TABLE}` +
+    `?select=${encodeURIComponent(columns)}` +
+    `&published=eq.true` +
+    `&order=featured.desc,created_at.desc`;
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        Accept: "application/json"
+      }
+    });
+
+    const text = await response.text();
+
+    let data;
+
+    try {
+      data = text ? JSON.parse(text) : [];
+    } catch {
+      throw new Error(
+        `Supabase returned an unexpected response: ${text}`
+      );
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        data?.message ||
+        data?.error_description ||
+        data?.hint ||
+        `Supabase HTTP ${response.status}`
+      );
+    }
+
+    if (!Array.isArray(data)) {
+      throw new Error("Supabase did not return a book list.");
+    }
+
+    books = data;
+
+    buildCategories();
+    renderBooks();
+
+    showStatus(
+      books.length === 1
+        ? "1 book"
+        : `${books.length} books`
+    );
+
+  } catch (error) {
+    console.error("BOOK STORE ERROR:", error);
+
+    showStatus(
+      `Unable to load books: ${error.message}`,
+      true
+    );
+  }
+}
+
+// --------------------------------------------
 // CATEGORIES
-// ========================================
+// --------------------------------------------
 
 function buildCategories() {
-
   const select = $("category");
 
   if (!select) return;
@@ -156,32 +184,33 @@ function buildCategories() {
   select.innerHTML =
     `<option value="">All categories</option>` +
     categories
-      .map(category =>
-        `<option value="${esc(category)}">
-          ${esc(category)}
-        </option>`
+      .map(
+        category =>
+          `<option value="${esc(category)}">${esc(category)}</option>`
       )
       .join("");
 }
 
-
-// ========================================
+// --------------------------------------------
 // RENDER BOOKS
-// ========================================
+// --------------------------------------------
 
 function renderBooks() {
-
   const grid = $("grid");
 
   if (!grid) return;
 
-  const search =
-    ($("search")?.value || "")
-      .toLowerCase()
-      .trim();
+  const searchInput = $("search");
 
-  const category =
-    $("category")?.value || "";
+  const query = searchInput
+    ? searchInput.value.toLowerCase().trim()
+    : "";
+
+  const categorySelect = $("category");
+
+  const category = categorySelect
+    ? categorySelect.value
+    : "";
 
   const filtered = books.filter(book => {
 
@@ -189,14 +218,15 @@ function renderBooks() {
       book.title,
       book.author,
       book.description,
-      book.category
+      book.category,
+      book.age_group
     ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
 
     const matchesSearch =
-      !search || searchable.includes(search);
+      !query || searchable.includes(query);
 
     const matchesCategory =
       !category || book.category === category;
@@ -204,159 +234,142 @@ function renderBooks() {
     return matchesSearch && matchesCategory;
   });
 
-
-  $("status").textContent =
-    `${filtered.length} book${filtered.length === 1 ? "" : "s"}`;
-
-
-  if (!filtered.length) {
-
+  if (filtered.length === 0) {
     grid.innerHTML = `
       <div class="empty">
         <h3>No books found</h3>
         <p>Try another search or category.</p>
       </div>
     `;
-
     return;
   }
 
+  grid.innerHTML = filtered
+    .map(book => {
 
-  grid.innerHTML = filtered.map(book => {
+      const cover = storageUrl(
+        COVER_BUCKET,
+        book.cover_path
+      );
 
-    const cover =
-      publicUrl(COVER_BUCKET, book.cover_path);
+      return `
+        <article class="card">
 
-    return `
-      <article class="card">
+          <button
+            class="cover"
+            type="button"
+            data-book-id="${esc(book.id)}"
+          >
 
-        <button
-          class="cover"
-          data-id="${esc(book.id)}"
-          aria-label="Open ${esc(book.title)}"
-        >
+            ${
+              cover
+                ? `<img
+                    src="${esc(cover)}"
+                    alt="${esc(book.title)} cover"
+                    loading="lazy"
+                    onerror="this.style.display='none'"
+                   >`
+                : `<div class="cover-placeholder">
+                     ${esc(book.emoji || "📚")}
+                   </div>`
+            }
 
-          ${
-            cover
-              ? `<img
-                   src="${cover}"
-                   alt="${esc(book.title)} cover"
-                   loading="lazy"
-                 >`
-              : `<div class="cover-placeholder">
-                   ${esc(book.emoji || "📚")}
-                 </div>`
-          }
+          </button>
 
-        </button>
+          <div class="info">
 
-        <div class="info">
+            <span class="pill">
+              ${esc(book.category || "Book")}
+            </span>
 
-          ${
-            book.category
-              ? `<span class="pill">
-                   ${esc(book.category)}
-                 </span>`
-              : ""
-          }
+            <h3>
+              ${esc(book.title || "Untitled")}
+            </h3>
 
-          <h3>${esc(book.title)}</h3>
+            ${
+              book.description
+                ? `<p>${esc(book.description)}</p>`
+                : ""
+            }
 
-          ${
-            book.author
-              ? `<p class="author">
-                   By ${esc(book.author)}
-                 </p>`
-              : ""
-          }
+            <div class="bottom">
 
-          ${
-            book.description
-              ? `<p>
-                   ${esc(book.description)}
-                 </p>`
-              : ""
-          }
+              <strong>
+                ${esc(formatPrice(book.price_inr))}
+              </strong>
 
-          <div class="bottom">
+              <button
+                type="button"
+                class="view-book"
+                data-book-id="${esc(book.id)}"
+              >
+                View book
+              </button>
 
-            <b>
-              ${formatPrice(book.price_inr)}
-            </b>
-
-            <button
-              class="btn primary"
-              data-id="${esc(book.id)}"
-            >
-              View book
-            </button>
+            </div>
 
           </div>
 
-        </div>
+        </article>
+      `;
+    })
+    .join("");
 
-      </article>
-    `;
-
-  }).join("");
-
-
-  // Attach click events
-
-  grid.querySelectorAll("[data-id]").forEach(element => {
-
-    element.addEventListener("click", () => {
-      openBook(element.dataset.id);
+  grid
+    .querySelectorAll("[data-book-id]")
+    .forEach(button => {
+      button.addEventListener("click", () => {
+        openBook(button.dataset.bookId);
+      });
     });
-
-  });
 }
 
-
-// ========================================
+// --------------------------------------------
 // OPEN BOOK
-// ========================================
+// --------------------------------------------
 
 function openBook(id) {
 
-  activeBook =
-    books.find(book => String(book.id) === String(id));
+  activeBook = books.find(
+    book => String(book.id) === String(id)
+  );
 
-  if (!activeBook) return;
-
-
-  // Cover
-
-  const cover =
-    publicUrl(
-      COVER_BUCKET,
-      activeBook.cover_path
-    );
-
-  if ($("mcover")) {
-    $("mcover").src = cover || "";
-    $("mcover").alt =
-      `${activeBook.title} cover`;
+  if (!activeBook) {
+    console.error("Book not found:", id);
+    return;
   }
 
+  const modal = $("modal");
 
-  // Category
+  if (!modal) {
+    console.error("Modal element not found.");
+    return;
+  }
+
+  const cover = storageUrl(
+    COVER_BUCKET,
+    activeBook.cover_path
+  );
+
+  const pdf = storageUrl(
+    PDF_BUCKET,
+    activeBook.storage_path
+  );
+
+  if ($("mcover")) {
+    $("mcover").src = cover;
+    $("mcover").alt = activeBook.title || "Book cover";
+  }
 
   if ($("mcat")) {
     $("mcat").textContent =
       activeBook.category || "Book";
   }
 
-
-  // Title
-
   if ($("mtitle")) {
     $("mtitle").textContent =
-      activeBook.title || "";
+      activeBook.title || "Untitled";
   }
-
-
-  // Author
 
   if ($("mauthor")) {
     $("mauthor").textContent =
@@ -365,9 +378,6 @@ function openBook(id) {
         : "";
   }
 
-
-  // Age group
-
   if ($("mage")) {
     $("mage").textContent =
       activeBook.age_group
@@ -375,71 +385,45 @@ function openBook(id) {
         : "";
   }
 
-
-  // Price
-
   if ($("mprice")) {
     $("mprice").textContent =
       formatPrice(activeBook.price_inr);
   }
 
+  if ($("mdescription")) {
+    $("mdescription").textContent =
+      activeBook.description || "";
+  }
 
-  // PDF
+  const readButton = $("read");
 
-  const pdf =
-    publicUrl(
-      PDF_BUCKET,
-      activeBook.storage_path
-    );
-
-
-  if ($("read")) {
-
+  if (readButton) {
     if (pdf) {
-
-      $("read").href = pdf;
-      $("read").target = "_blank";
-      $("read").rel = "noopener";
-      $("read").style.display = "";
-
+      readButton.href = pdf;
+      readButton.target = "_blank";
+      readButton.rel = "noopener";
+      readButton.style.display = "";
     } else {
-
-      $("read").style.display = "none";
+      readButton.removeAttribute("href");
+      readButton.style.display = "none";
     }
   }
 
+  modal.classList.remove("hidden");
 
-  // Buy button
-
-  if ($("buy")) {
-
-    $("buy").onclick = () => {
-
-      alert(
-        `Purchase flow for "${activeBook.title}" can be connected next.`
-      );
-
-    };
-  }
-
-
-  // Open modal
-
-  if ($("modal")) {
-    $("modal").classList.remove("hidden");
-    document.body.classList.add("modal-open");
-  }
+  document.body.classList.add("modal-open");
 }
 
+// --------------------------------------------
+// CLOSE MODAL
+// --------------------------------------------
 
-// ========================================
-// CLOSE BOOK
-// ========================================
+function closeModal() {
 
-function closeBook() {
+  const modal = $("modal");
 
-  if ($("modal")) {
-    $("modal").classList.add("hidden");
+  if (modal) {
+    modal.classList.add("hidden");
   }
 
   document.body.classList.remove("modal-open");
@@ -447,60 +431,63 @@ function closeBook() {
   activeBook = null;
 }
 
-
-// ========================================
+// --------------------------------------------
 // EVENTS
-// ========================================
+// --------------------------------------------
 
-if ($("search")) {
-  $("search").addEventListener("input", renderBooks);
-}
+document.addEventListener("DOMContentLoaded", () => {
 
-if ($("category")) {
-  $("category").addEventListener("change", renderBooks);
-}
+  console.log("NEETU BOOK STORE JS IS RUNNING");
 
-if ($("close")) {
-  $("close").addEventListener("click", closeBook);
-}
+  const search = $("search");
 
-if ($("modal")) {
-
-  $("modal").addEventListener("click", event => {
-
-    if (event.target === $("modal")) {
-      closeBook();
-    }
-
-  });
-}
-
-
-document.addEventListener("keydown", event => {
-
-  if (event.key === "Escape") {
-    closeBook();
+  if (search) {
+    search.addEventListener(
+      "input",
+      renderBooks
+    );
   }
 
-});
+  const category = $("category");
 
+  if (category) {
+    category.addEventListener(
+      "change",
+      renderBooks
+    );
+  }
 
-// ========================================
-// START
-// ========================================
+  const close = $("close");
 
-if (
-  SUPABASE_URL === " ||"https://qpoiprdminjmhopfpahw.supabase.co"|| ";
-  SUPABASE_PUBLISHABLE_KEY === "sb_publishable_iAgKgpm-X8TJ-5nFp-xyDg_kSSBSP4o
-"
-) ;{
+  if (close) {
+    close.addEventListener(
+      "click",
+      closeModal
+    );
+  }
 
-  $("status").innerHTML =
-    `<strong>Supabase setup required.</strong><br>
-     Open app.js and keep your existing Supabase URL and publishable key.`;
+  const modal = $("modal");
 
-} else
+  if (modal) {
+    modal.addEventListener(
+      "click",
+      event => {
+        if (event.target === modal) {
+          closeModal();
+        }
+      }
+    );
+  }
 
+  document.addEventListener(
+    "keydown",
+    event => {
+      if (event.key === "Escape") {
+        closeModal();
+      }
+    }
+  );
+
+  // Start loading books
   loadBooks();
-}
-console.log("NEETU BOOK STORE JS IS RUNNING");
+});
