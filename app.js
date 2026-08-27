@@ -1,11 +1,17 @@
-// ============================================
+// ============================================================
 // NEETU BOOK STORE
 // Supabase-powered book catalogue
-// ============================================
+// ============================================================
+
+// ------------------------------------------------------------
+// SUPABASE SETTINGS
+// ------------------------------------------------------------
 
 const SUPABASE_URL =
   "https://qpoiprdminjmhopfpahw.supabase.co";
 
+// IMPORTANT:
+// Paste your EXISTING complete publishable key between the quotes.
 const SUPABASE_KEY =
   "sb_publishable_iAgKgpm-X8TJ-5nFp-xyDg_kSSBSP4o";
 
@@ -13,16 +19,23 @@ const BOOK_TABLE = "books";
 const COVER_BUCKET = "book-covers";
 const PDF_BUCKET = "ebooks";
 
+
+// ------------------------------------------------------------
+// APP STATE
+// ------------------------------------------------------------
+
 let books = [];
 let activeBook = null;
 
-// --------------------------------------------
-// HELPERS
-// --------------------------------------------
+
+// ------------------------------------------------------------
+// BASIC HELPERS
+// ------------------------------------------------------------
 
 function $(id) {
   return document.getElementById(id);
 }
+
 
 function esc(value = "") {
   return String(value)
@@ -33,83 +46,110 @@ function esc(value = "") {
     .replace(/'/g, "&#039;");
 }
 
+
 function formatPrice(value) {
-  if (value === null || value === undefined || value === "") {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return "Free";
   }
 
   const number = Number(value);
 
   if (Number.isNaN(number)) {
-    return String(value);
+    return esc(value);
   }
 
-  return number === 0 ? "Free" : `₹${number}`;
+  return number === 0
+    ? "Free"
+    : `₹${number}`;
 }
 
-function storageUrl(bucket, path) {
+
+// ------------------------------------------------------------
+// SUPABASE STORAGE URL
+// ------------------------------------------------------------
+
+function publicUrl(bucket, path) {
   if (!path) return "";
 
-  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${String(
-    path
-  )
+  const cleanPath = String(path)
+    .trim()
+    .replace(/^\/+/, "");
+
+  const encodedPath = cleanPath
     .split("/")
-    .map(encodeURIComponent)
-    .join("/")}`;
+    .map(part => encodeURIComponent(part))
+    .join("/");
+
+  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodedPath}`;
 }
 
-// --------------------------------------------
-// SHOW STATUS
-// --------------------------------------------
 
-function showStatus(message, error = false) {
+// ------------------------------------------------------------
+// STATUS MESSAGE
+// ------------------------------------------------------------
+
+function showStatus(message, isError = false) {
   const status = $("status");
 
-  if (!status) return;
+  if (!status) {
+    console.log(message);
+    return;
+  }
 
   status.textContent = message;
 
-  status.style.display = "block";
-
-  if (error) {
-    status.style.color = "#b42318";
-  } else {
-    status.style.color = "#68736c";
-  }
+  status.classList.toggle("error", isError);
 }
 
-// --------------------------------------------
-// LOAD BOOKS DIRECTLY FROM SUPABASE
-// --------------------------------------------
+
+// ------------------------------------------------------------
+// LOAD BOOKS FROM SUPABASE
+// ------------------------------------------------------------
+
 async function loadBooks() {
   showStatus("Loading books…");
 
-  const columns = [
-    "id",
-    "title",
-    "slug",
-    "author",
-    "description",
-    "category",
-    "age_group",
-    "emoji",
-    "price_inr",
-    "storage_path",
-    "cover_path",
-    "published",
-    "featured",
-    "created_at"
-  ].join(",");
-
-  const url =
-    `${SUPABASE_URL}/rest/v1/${BOOK_TABLE}` +
-    `?select=${encodeURIComponent(columns)}` +
-    `&published=eq.true` +
-    `&order=featured.desc,created_at.desc`;
-
   try {
-    const response = await fetch(url, {
+
+    if (
+      !SUPABASE_KEY ||
+      SUPABASE_KEY.includes("PASTE_YOUR")
+    ) {
+      throw new Error(
+        "Supabase publishable key is missing."
+      );
+    }
+
+    const columns = [
+      "id",
+      "title",
+      "slug",
+      "author",
+      "description",
+      "category",
+      "age_group",
+      "emoji",
+      "price_inr",
+      "storage_path",
+      "cover_path",
+      "published",
+      "featured",
+      "created_at"
+    ];
+
+    const query =
+      `${SUPABASE_URL}/rest/v1/${BOOK_TABLE}` +
+      `?select=${encodeURIComponent(columns.join(","))}` +
+      `&published=eq.true` +
+      `&order=featured.desc,created_at.desc`;
+
+    const response = await fetch(query, {
       method: "GET",
+
       headers: {
         apikey: SUPABASE_KEY,
         Authorization: `Bearer ${SUPABASE_KEY}`,
@@ -119,27 +159,40 @@ async function loadBooks() {
 
     const text = await response.text();
 
-    let data;
+    if (!response.ok) {
+      let message = text;
+
+      try {
+        const errorData = JSON.parse(text);
+
+        message =
+          errorData.message ||
+          errorData.error_description ||
+          errorData.error ||
+          text;
+      } catch {
+        // Keep original text
+      }
+
+      throw new Error(
+        `Supabase HTTP ${response.status}: ${message}`
+      );
+    }
+
+    let data = [];
 
     try {
       data = text ? JSON.parse(text) : [];
     } catch {
       throw new Error(
-        `Supabase returned an unexpected response: ${text}`
-      );
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        data?.message ||
-        data?.error_description ||
-        data?.hint ||
-        `Supabase HTTP ${response.status}`
+        "Supabase returned invalid JSON."
       );
     }
 
     if (!Array.isArray(data)) {
-      throw new Error("Supabase did not return a book list.");
+      throw new Error(
+        "Supabase did not return a list of books."
+      );
     }
 
     books = data;
@@ -154,7 +207,11 @@ async function loadBooks() {
     );
 
   } catch (error) {
-    console.error("BOOK STORE ERROR:", error);
+
+    console.error(
+      "NEETU BOOK STORE ERROR:",
+      error
+    );
 
     showStatus(
       `Unable to load books: ${error.message}`,
@@ -164,14 +221,16 @@ async function loadBooks() {
 }
 
 
-// --------------------------------------------
-// CATEGORIES
-// --------------------------------------------
+// ------------------------------------------------------------
+// BUILD CATEGORY DROPDOWN
+// ------------------------------------------------------------
 
 function buildCategories() {
   const select = $("category");
 
   if (!select) return;
+
+  const currentValue = select.value || "";
 
   const categories = [
     ...new Set(
@@ -179,42 +238,61 @@ function buildCategories() {
         .map(book => book.category)
         .filter(Boolean)
     )
-  ].sort();
+  ].sort((a, b) =>
+    String(a).localeCompare(String(b))
+  );
 
-  select.innerHTML =
-    `<option value="">All categories</option>` +
-    categories
-      .map(
-        category =>
-          `<option value="${esc(category)}">${esc(category)}</option>`
-      )
-      .join("");
+  select.innerHTML = `
+    <option value="">All categories</option>
+    ${categories
+      .map(category => `
+        <option value="${esc(category)}">
+          ${esc(category)}
+        </option>
+      `)
+      .join("")}
+  `;
+
+  if (
+    categories.includes(currentValue)
+  ) {
+    select.value = currentValue;
+  }
 }
 
-// --------------------------------------------
-// RENDER BOOKS
-// --------------------------------------------
 
-function renderBooks() {
-  const grid = $("grid");
+// ------------------------------------------------------------
+// FILTER BOOKS
+// ------------------------------------------------------------
 
-  if (!grid) return;
-
+function getFilteredBooks() {
   const searchInput = $("search");
-
-  const query = searchInput
-    ? searchInput.value.toLowerCase().trim()
-    : "";
-
   const categorySelect = $("category");
 
-  const category = categorySelect
-    ? categorySelect.value
-    : "";
+  const search = (
+    searchInput?.value || ""
+  )
+    .trim()
+    .toLowerCase();
 
-  const filtered = books.filter(book => {
+  const category =
+    categorySelect?.value || "";
 
-    const searchable = [
+  return books.filter(book => {
+
+    const matchesCategory =
+      !category ||
+      String(book.category || "") === category;
+
+    if (!matchesCategory) {
+      return false;
+    }
+
+    if (!search) {
+      return true;
+    }
+
+    const searchableText = [
       book.title,
       book.author,
       book.description,
@@ -225,279 +303,551 @@ function renderBooks() {
       .join(" ")
       .toLowerCase();
 
-    const matchesSearch =
-      !query || searchable.includes(query);
-
-    const matchesCategory =
-      !category || book.category === category;
-
-    return matchesSearch && matchesCategory;
+    return searchableText.includes(search);
   });
+}
 
-  if (filtered.length === 0) {
-    grid.innerHTML = `
-      <div class="empty">
-        <h3>No books found</h3>
-        <p>Try another search or category.</p>
-      </div>
-    `;
+
+// ------------------------------------------------------------
+// RENDER BOOKS
+// ------------------------------------------------------------
+
+function renderBooks() {
+  const grid = $("grid");
+
+  if (!grid) {
+    console.error(
+      'Element with id="grid" was not found.'
+    );
     return;
   }
 
-  grid.innerHTML = filtered
-    .map(book => {
+  const filteredBooks =
+    getFilteredBooks();
 
-      const cover = storageUrl(
-        COVER_BUCKET,
-        book.cover_path
-      );
+  if (filteredBooks.length === 0) {
 
-      return `
-        <article class="card">
+    grid.innerHTML = `
+      <div class="empty-state">
+        <div style="font-size:42px;">📚</div>
+        <h3>No books found</h3>
+        <p>
+          Try another search or category.
+        </p>
+      </div>
+    `;
+
+    return;
+  }
+
+  grid.innerHTML =
+    filteredBooks
+      .map(book => createBookCard(book))
+      .join("");
+}
+
+
+// ------------------------------------------------------------
+// BOOK CARD
+// ------------------------------------------------------------
+
+function createBookCard(book) {
+
+  const cover =
+    publicUrl(
+      COVER_BUCKET,
+      book.cover_path
+    );
+
+  const category =
+    book.category || "Books";
+
+  const title =
+    book.title || "Untitled book";
+
+  const description =
+    book.description ||
+    "Discover a new story, idea or adventure.";
+
+  const price =
+    formatPrice(book.price_inr);
+
+  return `
+    <article
+      class="book-card"
+      data-book-id="${esc(book.id)}"
+    >
+
+      <div class="book-cover">
+
+        ${
+          cover
+            ? `
+              <img
+                src="${esc(cover)}"
+                alt="${esc(title)}"
+                loading="lazy"
+                onerror="this.style.display='none';"
+              >
+            `
+            : `
+              <div class="cover-placeholder">
+                ${esc(book.emoji || "📚")}
+              </div>
+            `
+        }
+
+      </div>
+
+
+      <div class="book-info">
+
+        <div class="book-category">
+          ${esc(category)}
+        </div>
+
+        <h3>
+          ${esc(title)}
+        </h3>
+
+        <p>
+          ${esc(description)}
+        </p>
+
+
+        <div class="book-bottom">
+
+          <strong>
+            ${price}
+          </strong>
 
           <button
-            class="cover"
+            class="view-book"
             type="button"
             data-book-id="${esc(book.id)}"
           >
-
-            ${
-              cover
-                ? `<img
-                    src="${esc(cover)}"
-                    alt="${esc(book.title)} cover"
-                    loading="lazy"
-                    onerror="this.style.display='none'"
-                   >`
-                : `<div class="cover-placeholder">
-                     ${esc(book.emoji || "📚")}
-                   </div>`
-            }
-
+            View book
           </button>
 
-          <div class="info">
+        </div>
 
-            <span class="pill">
-              ${esc(book.category || "Book")}
-            </span>
+      </div>
 
-            <h3>
-              ${esc(book.title || "Untitled")}
-            </h3>
-
-            ${
-              book.description
-                ? `<p>${esc(book.description)}</p>`
-                : ""
-            }
-
-            <div class="bottom">
-
-              <strong>
-                ${esc(formatPrice(book.price_inr))}
-              </strong>
-
-              <button
-                type="button"
-                class="view-book"
-                data-book-id="${esc(book.id)}"
-              >
-                View book
-              </button>
-
-            </div>
-
-          </div>
-
-        </article>
-      `;
-    })
-    .join("");
-
-  grid
-    .querySelectorAll("[data-book-id]")
-    .forEach(button => {
-      button.addEventListener("click", () => {
-        openBook(button.dataset.bookId);
-      });
-    });
+    </article>
+  `;
 }
 
-// --------------------------------------------
-// OPEN BOOK
-// --------------------------------------------
 
-function openBook(id) {
+// ------------------------------------------------------------
+// OPEN BOOK MODAL
+// ------------------------------------------------------------
 
-  activeBook = books.find(
-    book => String(book.id) === String(id)
-  );
+function openBook(book) {
 
-  if (!activeBook) {
-    console.error("Book not found:", id);
-    return;
-  }
+  activeBook = book;
 
-  const modal = $("modal");
+  const modal =
+    $("modal");
 
   if (!modal) {
-    console.error("Modal element not found.");
+    console.error(
+      'Element with id="modal" was not found.'
+    );
     return;
   }
 
-  const cover = storageUrl(
-    COVER_BUCKET,
-    activeBook.cover_path
-  );
+  const cover =
+    publicUrl(
+      COVER_BUCKET,
+      book.cover_path
+    );
 
-  const pdf = `${SUPABASE_URL}/storage/v1/object/public/${PDF_BUCKET}/${encodeURIComponent(String(active.storage_path).trim())}`;
-  );
+  const title =
+    book.title || "Untitled book";
 
-  if ($("mcover")) {
-    $("mcover").src = cover;
-    $("mcover").alt = activeBook.title || "Book cover";
-  }
+  const author =
+    book.author || "";
 
-  if ($("mcat")) {
-    $("mcat").textContent =
-      activeBook.category || "Book";
-  }
+  const category =
+    book.category || "";
 
-  if ($("mtitle")) {
-    $("mtitle").textContent =
-      activeBook.title || "Untitled";
-  }
+  const age =
+    book.age_group || "";
 
-  if ($("mauthor")) {
-    $("mauthor").textContent =
-      activeBook.author
-        ? `By ${activeBook.author}`
-        : "";
-  }
+  const price =
+    formatPrice(book.price_inr);
 
-  if ($("mage")) {
-    $("mage").textContent =
-      activeBook.age_group
-        ? `Ages ${activeBook.age_group}`
-        : "";
-  }
+  const description =
+    book.description || "";
 
-  if ($("mprice")) {
-    $("mprice").textContent =
-      formatPrice(activeBook.price_inr);
-  }
 
-  if ($("mdescription")) {
-    $("mdescription").textContent =
-      activeBook.description || "";
-  }
+  modal.innerHTML = `
 
-  const readButton = $("read");
+    <div
+      class="modal-backdrop"
+      data-close-modal="true"
+    ></div>
 
-  if (readButton) {
-    if (pdf) {
-      readButton.href = pdf;
-      readButton.target = "_blank";
-      readButton.rel = "noopener";
-      readButton.style.display = "";
-    } else {
-      readButton.removeAttribute("href");
-      readButton.style.display = "none";
-    }
-  }
+    <div
+      class="modal-content"
+      role="dialog"
+      aria-modal="true"
+      aria-label="${esc(title)}"
+    >
 
-  modal.classList.remove("hidden");
+      <button
+        class="modal-close"
+        type="button"
+        data-close-modal="true"
+        aria-label="Close"
+      >
+        ×
+      </button>
 
+
+      <div class="modal-cover">
+
+        ${
+          cover
+            ? `
+              <img
+                src="${esc(cover)}"
+                alt="${esc(title)}"
+              >
+            `
+            : `
+              <div class="cover-placeholder">
+                ${esc(book.emoji || "📚")}
+              </div>
+            `
+        }
+
+      </div>
+
+
+      ${
+        category
+          ? `
+            <div class="book-category">
+              ${esc(category)}
+            </div>
+          `
+          : ""
+      }
+
+
+      <h2>
+        ${esc(title)}
+      </h2>
+
+
+      ${
+        author
+          ? `
+            <p class="modal-author">
+              By ${esc(author)}
+            </p>
+          `
+          : ""
+      }
+
+
+      <div class="modal-meta">
+
+        ${
+          age
+            ? `
+              <strong>
+                Ages ${esc(age)}
+              </strong>
+            `
+            : ""
+        }
+
+        <strong>
+          ${price}
+        </strong>
+
+      </div>
+
+
+      ${
+        description
+          ? `
+            <p class="modal-description">
+              ${esc(description)}
+            </p>
+          `
+          : ""
+      }
+
+
+      <div class="modal-actions">
+
+        <button
+          class="read-button"
+          type="button"
+          data-read-book="true"
+        >
+          Read / Open
+        </button>
+
+
+        <button
+          class="buy-button"
+          type="button"
+          data-buy-book="true"
+        >
+          Buy
+        </button>
+
+      </div>
+
+
+      <p class="payment-note">
+        Payment can be connected after the bookstore design is approved.
+      </p>
+
+    </div>
+  `;
+
+
+  modal.classList.add("open");
   document.body.classList.add("modal-open");
 }
 
-// --------------------------------------------
+
+// ------------------------------------------------------------
 // CLOSE MODAL
-// --------------------------------------------
+// ------------------------------------------------------------
 
 function closeModal() {
 
   const modal = $("modal");
 
-  if (modal) {
-    modal.classList.add("hidden");
-  }
+  if (!modal) return;
 
-  document.body.classList.remove("modal-open");
+  modal.classList.remove("open");
+
+  document.body.classList.remove(
+    "modal-open"
+  );
 
   activeBook = null;
 }
 
-// --------------------------------------------
-// EVENTS
-// --------------------------------------------
 
-document.addEventListener("DOMContentLoaded", () => {
+// ------------------------------------------------------------
+// OPEN PDF
+// ------------------------------------------------------------
 
-  console.log("NEETU BOOK STORE JS IS RUNNING");
+function openPDF(book) {
 
-  const search = $("search");
+  if (!book) return;
+
+  let pdfPath =
+    book.storage_path;
+
+  /*
+    If storage_path is empty, use the title
+    as a fallback.
+
+    For your Door 2050 book this means:
+
+    Door 2050.pdf
+  */
+
+  if (!pdfPath) {
+
+    pdfPath =
+      `${book.title || "book"}.pdf`;
+  }
+
+  const pdfUrl =
+    publicUrl(
+      PDF_BUCKET,
+      pdfPath
+    );
+
+  if (!pdfUrl) {
+
+    alert(
+      "The PDF file is not connected to this book yet."
+    );
+
+    return;
+  }
+
+  console.log(
+    "Opening PDF:",
+    pdfUrl
+  );
+
+  window.open(
+    pdfUrl,
+    "_blank",
+    "noopener,noreferrer"
+  );
+}
+
+
+// ------------------------------------------------------------
+// BUY BUTTON
+// ------------------------------------------------------------
+
+function buyBook(book) {
+
+  if (!book) return;
+
+  /*
+    Payment can be connected later.
+
+    For now we show a simple message.
+  */
+
+  alert(
+    `Purchase for "${book.title}" will be available soon.`
+  );
+}
+
+
+// ------------------------------------------------------------
+// EVENT HANDLERS
+// ------------------------------------------------------------
+
+function setupEvents() {
+
+  const search =
+    $("search");
+
+  const category =
+    $("category");
+
 
   if (search) {
+
     search.addEventListener(
       "input",
       renderBooks
     );
   }
 
-  const category = $("category");
 
   if (category) {
+
     category.addEventListener(
       "change",
       renderBooks
     );
   }
 
-  const close = $("close");
 
-  if (close) {
-    close.addEventListener(
-      "click",
-      closeModal
-    );
-  }
+  document.addEventListener(
+    "click",
+    event => {
 
-  const modal = $("modal");
+      const viewButton =
+        event.target.closest(
+          ".view-book"
+        );
 
-  if (modal) {
-    modal.addEventListener(
-      "click",
-      event => {
-        if (event.target === modal) {
-          closeModal();
+      if (viewButton) {
+
+        const id =
+          viewButton.dataset.bookId;
+
+        const book =
+          books.find(
+            item =>
+              String(item.id) ===
+              String(id)
+          );
+
+        if (book) {
+          openBook(book);
         }
+
+        return;
       }
-    );
-  }
+
+
+      if (
+        event.target.closest(
+          "[data-close-modal]"
+        )
+      ) {
+
+        closeModal();
+
+        return;
+      }
+
+
+      if (
+        event.target.closest(
+          "[data-read-book]"
+        )
+      ) {
+
+        openPDF(activeBook);
+
+        return;
+      }
+
+
+      if (
+        event.target.closest(
+          "[data-buy-book]"
+        )
+      ) {
+
+        buyBook(activeBook);
+
+        return;
+      }
+
+    }
+  );
+
 
   document.addEventListener(
     "keydown",
     event => {
-      if (event.key === "Escape") {
+
+      if (
+        event.key === "Escape"
+      ) {
+
         closeModal();
       }
+
     }
   );
+}
 
-  // Start loading books
+
+// ------------------------------------------------------------
+// START APP
+// ------------------------------------------------------------
+
+function startApp() {
+
+  setupEvents();
+
   loadBooks();
-});
-function publicUrl(bucket, path) {
-  if (!path) return "";
+}
 
-  const cleanPath = String(path).trim();
 
-  const { data } = supabase
-    .storage
-    .from(bucket)
-    .getPublicUrl(cleanPath);
+if (
+  document.readyState === "loading"
+) {
 
-  return data?.publicUrl || "";
+  document.addEventListener(
+    "DOMContentLoaded",
+    startApp
+  );
+
+} else {
+
+  startApp();
 }
