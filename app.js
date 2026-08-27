@@ -351,9 +351,7 @@ function openBook(id) {
     activeBook.cover_path
   );
 
-  const pdf = storageUrl(
-    PDF_BUCKET,
-    activeBook.storage_path
+  const pdf = `${SUPABASE_URL}/storage/v1/object/public/${PDF_BUCKET}/${encodeURIComponent(String(active.storage_path).trim())}`;
   );
 
   if ($("mcover")) {
