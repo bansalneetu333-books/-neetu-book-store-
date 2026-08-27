@@ -81,7 +81,6 @@ function showStatus(message, error = false) {
 // --------------------------------------------
 // LOAD BOOKS DIRECTLY FROM SUPABASE
 // --------------------------------------------
-
 async function loadBooks() {
   showStatus("Loading books…");
 
@@ -163,6 +162,7 @@ async function loadBooks() {
     );
   }
 }
+
 
 // --------------------------------------------
 // CATEGORIES
