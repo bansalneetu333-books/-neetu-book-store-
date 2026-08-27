@@ -491,3 +491,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // Start loading books
   loadBooks();
 });
+function publicUrl(bucket, path) {
+  if (!path) return "";
+
+  const cleanPath = String(path).trim();
+
+  const { data } = supabase
+    .storage
+    .from(bucket)
+    .getPublicUrl(cleanPath);
+
+  return data?.publicUrl || "";
+}
